@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+.streamlit/secrets.toml
+*.mp3
+*.wav
+temp_*
+batch_results.zip

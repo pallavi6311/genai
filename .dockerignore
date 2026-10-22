@@ -1,0 +1,11 @@
+.env
+.env.*
+.streamlit/secrets.toml
+.venv/
+__pycache__/
+*.py[cod]
+*.mp3
+*.wav
+temp_*
+batch_results.zip
+.git/
