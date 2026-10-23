@@ -60,7 +60,6 @@ def build_fallback_story(caption: str, language: str) -> str:
 
 
 def build_output_text(caption: str, mode: str, language: str) -> dict:
-    lang_code = {"English": "en", "Hindi": "hi", "Tamil": "ta", "Japanese": "ja"}.get(language, "en")
     narration = None
     if _gemini_ready():
         try:
@@ -69,12 +68,6 @@ def build_output_text(caption: str, mode: str, language: str) -> dict:
             narration = None
     if not narration:
         narration = build_fallback_story(caption, language)
-
-    if language != "English":
-        try:
-            narration = ai_utils.translate_text(narration, lang_code)
-        except Exception:
-            pass
 
     extra_lines = {
         "English": "Speak clearly, use simple phrases, and describe the people and objects with confidence.",
@@ -173,6 +166,10 @@ def main() -> None:
 
     if "history" not in st.session_state:
         st.session_state.history = []
+    if "adaptive_practice_plan" not in st.session_state:
+        st.session_state.adaptive_practice_plan = None
+    if "adaptive_practice_plan_context" not in st.session_state:
+        st.session_state.adaptive_practice_plan_context = None
     if "japanese_question" not in st.session_state:
         st.session_state.japanese_question = None
     if "japanese_evaluation" not in st.session_state:
@@ -239,9 +236,19 @@ def main() -> None:
             key="image_result_language",
         )
         st.caption(f"The image description, speech, and image questions will be provided in {language}.")
+        include_ocr = st.checkbox(
+            "Also detect text in the image (slower)",
+            value=False,
+            help="Text detection is optional and can add processing time.",
+        )
+        include_story = st.checkbox(
+            "Generate a story and speech audio (slower)",
+            value=False,
+            help="Creates a story with Gemini and generates speech audio after the image description.",
+        )
         st.subheader("Image Analysis")
-        if st.button("Generate description and speech"):
-            with st.spinner("Analyzing image and preparing speech output..."):
+        if st.button("Analyze image"):
+            with st.spinner("Analyzing uploaded images..."):
                 for uploaded in uploaded_files:
                     image_bytes = uploaded.getvalue()
                     caption = ""
@@ -259,27 +266,36 @@ def main() -> None:
                     else:
                         caption = fallback_image_caption(uploaded.name)
 
-                    ocr_text = extract_text_from_image(image_bytes)
+                    ocr_text = extract_text_from_image(image_bytes) if include_ocr else ""
                     localized_caption = caption
-                    result = build_output_text(caption, "Original Story", language)
-                    narration = result["narration"]
-                    tip = result["practice_tip"]
-
-                    audio_path = generate_audio_file(narration, language, accent, f"{uploaded.name}_speech.mp3")
+                    narration = ""
+                    tip = ""
+                    audio_path = None
+                    if include_story:
+                        result = build_output_text(caption, "Original Story", language)
+                        narration = result["narration"]
+                        tip = result["practice_tip"]
+                        audio_path = generate_audio_file(
+                            narration,
+                            language,
+                            accent,
+                            f"{uploaded.name}_speech.mp3",
+                        )
 
                     st.subheader(f"Result: {uploaded.name}")
                     st.info(localized_caption)
-                    st.write("**Speech audio**")
-                    if audio_path:
-                        st.audio(audio_path)
-                    else:
-                        st.warning("Speech generation was unavailable for this output.")
+                    if include_story:
+                        st.write("**Speech audio**")
+                        if audio_path:
+                            st.audio(audio_path)
+                        else:
+                            st.warning("Speech generation was unavailable for this output.")
 
-                    st.write("**Fictional story inspired by the image**")
-                    st.write(narration)
+                        st.write("**Fictional story inspired by the image**")
+                        st.write(narration)
 
-                    st.write("**Practice tip**")
-                    st.write(tip)
+                        st.write("**Practice tip**")
+                        st.write(tip)
 
                     if ocr_text:
                         with st.expander("Detected text in the image"):
@@ -581,8 +597,16 @@ def main() -> None:
         if latest.get("caption"):
             score_sample = 70 if "people" in latest["caption"].lower() else 55
         level = get_level_from_score(score_sample)
-        plan = ai_utils.generate_practice_plan(level, language, score_sample)
-        st.write(plan)
+        plan_context = (latest.get("caption", ""), language, level, score_sample)
+        if st.button("Generate adaptive practice recommendations"):
+            st.session_state.adaptive_practice_plan = ai_utils.generate_practice_plan(
+                level,
+                language,
+                score_sample,
+            )
+            st.session_state.adaptive_practice_plan_context = plan_context
+        if st.session_state.adaptive_practice_plan_context == plan_context:
+            st.write(st.session_state.adaptive_practice_plan)
     else:
         st.write("Start with one image to generate a communication practice plan based on learner progress.")
 
@@ -595,7 +619,8 @@ def main() -> None:
                 st.write(f"**Language:** {item['language']}")
                 st.write(f"**Accent:** {item['accent']}")
                 st.write(f"**Caption:** {item['caption']}")
-                st.write(item['narration'])
+                if item["narration"]:
+                    st.write(item["narration"])
     else:
         st.write("No recent results yet.")
 

@@ -9,6 +9,8 @@ multiple languages.
 
 - Gemini image understanding that identifies visible people, animals, objects,
   colors, positions, actions, setting, and readable text.
+- Quick image descriptions by default, with OCR, story/audio generation, and
+  adaptive recommendations available on demand.
 - Image-context questions generated from the uploaded image, so learners can
   explain what is visible and what is happening in the scene.
 - SceneSpeak three-round challenge: learners observe visible details, explain
@@ -123,13 +125,14 @@ excluded from the Git and Docker build contexts.
 
 1. Choose a language and matching voice in the sidebar.
 2. Upload one or more PNG, JPG, or JPEG images.
-3. Select **Generate description and speech**.
-4. Read the visual description and play the generated audio.
+3. Select **Analyze image** for a quick visual description.
+4. Enable OCR or story-and-speech generation before analyzing if you need those
+   optional, slower features.
 5. Open conversation practice and choose a level and topic.
 6. Ask the AI for a question, answer in the selected language, and submit your answer.
 7. Review the score, correction, recommended vocabulary, pronunciation, and
   usage guidance.
-8. Review the adaptive practice topics for the resulting level.
+8. Optionally generate adaptive practice recommendations on the main page.
 
 The **SceneSpeak** challenge is available directly below the image questions on
 the main page after an image description has been generated. Choose a level,
