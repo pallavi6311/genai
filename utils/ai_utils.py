@@ -266,19 +266,38 @@ def generate_story(
     return None
 
 
-def generate_practice_plan(level: str, language: str, score: float) -> str:
+def generate_practice_plan(
+    level: str,
+    language: str,
+    score: float,
+    focus_areas: Optional[list[str]] = None,
+) -> str:
+    focus_summary = ", ".join(area.strip() for area in (focus_areas or []) if area.strip())
+    fallback_plan = (
+        f"Current level: {level} ({score:.0f}/100) in {language}.\n"
+        f"Main focus: {focus_summary or 'clear pronunciation, correct grammar, and complete answers'}.\n"
+        "7-day speaking schedule (15 minutes each day):\n"
+        "Day 1: Listen to and repeat the corrected answer slowly; focus on clear sounds.\n"
+        "Day 2: Practise the grammar corrections and make five new sentences.\n"
+        "Day 3: Answer three everyday questions in complete sentences and record yourself.\n"
+        "Day 4: Repeat the pronunciation practice, paying attention to rhythm and pauses.\n"
+        "Day 5: Use the recommended vocabulary in a one-minute answer.\n"
+        "Day 6: Re-answer today's question without reading; compare it with your first attempt.\n"
+        "Day 7: Record a new answer and review your grammar, pronunciation, and confidence.\n"
+        "Track your next score and focus first on the skill that needs the most practice."
+    )
     model = _get_model() or _get_model("gemini-1.5-flash")
     if model is None:
-        return (
-            f"Your communication level appears {level.lower()}. "
-            f"Practice short introductions, greetings, and simple everyday conversation in {language}."
-        )
+        return fallback_plan
 
     prompt = (
         f"Create a focused communication improvement plan for a learner with level '{level}' "
-        f"in {language}. Their recent quiz score was {score:.0f}%. "
-        "Give 5 practical topics to improve conversation skills, with simple speaking goals. "
-        "Keep it supportive and tailored to their level."
+        f"in {language}. Their recent speaking score was {score:.0f}/100. "
+        f"Specific feedback and weak areas: {focus_summary or 'not provided'}. "
+        "Give a practical 7-day speaking schedule, one clearly labelled task per day, "
+        "with a 10- to 20-minute activity and a measurable speaking goal. "
+        "Prioritize the learner's weak areas, include pronunciation and grammar practice, "
+        "and finish with a recorded self-check. Keep it supportive and appropriate to their level."
     )
     try:
         response = model.generate_content(prompt)
@@ -288,10 +307,7 @@ def generate_practice_plan(level: str, language: str, score: float) -> str:
     except Exception:
         pass
 
-    return (
-        f"Based on the score, focus on {level.lower()} communication tasks in {language}: "
-        "introductions, greetings, asking questions, and describing daily activities."
-    )
+    return fallback_plan
 
 
 def _parse_json_response(text: str) -> dict:
@@ -508,8 +524,12 @@ def evaluate_audio_answer(
         f"The question was: {question}\nLearner level: {level}\n\n"
         f"First transcribe only the clearly spoken answer in {language_name}. Then evaluate whether it answers "
         "the question, including meaning, grammar, politeness, naturalness, and pronunciation. "
-        "Return JSON only with exactly these keys: transcript, score, level, is_correct, feedback, "
-        "corrected_answer, corrections, vocabulary, pronunciation, usage. "
+        "Return JSON only with exactly these keys: transcript, score, grammar_score, pronunciation_score, "
+        "fluency_score, content_score, level, is_correct, feedback, corrected_answer, corrections, "
+        "vocabulary, pronunciation, usage. "
+        "All five scores must be integers from 0 to 100. score is the overall speaking score; "
+        "grammar_score rates grammar accuracy, pronunciation_score rates how clearly the words were spoken, "
+        "fluency_score rates flow and pacing, and content_score rates how well the answer addresses the question. "
         "corrections must be an array of objects with original, correction, and explanation. "
         "vocabulary must be an array of objects with word, meaning, reading, pronunciation, and usage_example. "
         "pronunciation must identify useful pronunciation improvements for the recorded answer. "

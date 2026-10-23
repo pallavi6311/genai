@@ -25,9 +25,12 @@ UI_TEXT = {
         "transcript": "What we heard",
         "correction": "Corrected answer",
         "vocabulary": "Recommended words",
+        "grammar": "Grammar",
+        "fluency": "Fluency",
+        "relevance": "Answer relevance",
         "pronunciation": "Pronunciation practice",
         "usage": "When to use it",
-        "next": "Next practice recommendation",
+        "next": "Your score-based 7-day improvement schedule",
         "empty": "Record an answer before evaluating it.",
     },
     "Hindi": {
@@ -42,9 +45,12 @@ UI_TEXT = {
         "transcript": "हमने यह सुना",
         "correction": "सही उत्तर",
         "vocabulary": "सुझाए गए शब्द",
+        "grammar": "व्याकरण",
+        "fluency": "प्रवाह",
+        "relevance": "उत्तर की प्रासंगिकता",
         "pronunciation": "उच्चारण अभ्यास",
         "usage": "इसका उपयोग कब करें",
-        "next": "अगला अभ्यास सुझाव",
+        "next": "आपके स्कोर के आधार पर 7-दिन का अभ्यास कार्यक्रम",
         "empty": "मूल्यांकन से पहले अपना उत्तर रिकॉर्ड करें।",
     },
     "Tamil": {
@@ -59,9 +65,12 @@ UI_TEXT = {
         "transcript": "நாங்கள் கேட்டது",
         "correction": "சரியான பதில்",
         "vocabulary": "பரிந்துரைக்கப்பட்ட சொற்கள்",
+        "grammar": "இலக்கணம்",
+        "fluency": "சரளமாகப் பேசுதல்",
+        "relevance": "பதிலின் பொருத்தம்",
         "pronunciation": "உச்சரிப்பு பயிற்சி",
         "usage": "எப்போது பயன்படுத்துவது",
-        "next": "அடுத்த பயிற்சி பரிந்துரை",
+        "next": "உங்கள் மதிப்பெண் அடிப்படையிலான 7 நாள் பயிற்சி அட்டவணை",
         "empty": "மதிப்பீட்டிற்கு முன் உங்கள் பதிலை பதிவு செய்யுங்கள்.",
     },
     "Japanese": {
@@ -76,9 +85,12 @@ UI_TEXT = {
         "transcript": "聞き取った答え",
         "correction": "正しい答え",
         "vocabulary": "おすすめの言葉",
+        "grammar": "文法",
+        "fluency": "流暢さ",
+        "relevance": "回答の適切さ",
         "pronunciation": "発音練習",
         "usage": "使う場面",
-        "next": "次の練習のおすすめ",
+        "next": "スコアに基づく7日間の練習スケジュール",
         "empty": "評価する前に答えを録音してください。",
     },
 }
@@ -111,10 +123,21 @@ def render_evaluation(
     if evaluation.get("error"):
         st.warning(f"Audio evaluation was not completed: {evaluation['error']}")
     else:
-        st.success(f"{score}/100 | {evaluation.get('level', 'Beginner')}")
+        level = "Advanced" if score >= 80 else "Intermediate" if score >= 55 else "Beginner"
+        st.success(f"{score}/100 | Current level: {level}")
+        score_columns = st.columns(4)
+        for column, label, score_key in zip(
+            score_columns,
+            [text["grammar"], text["pronunciation"], text["fluency"], text["relevance"]],
+            ["grammar_score", "pronunciation_score", "fluency_score", "content_score"],
+        ):
+            if evaluation.get(score_key) is not None:
+                column.metric(label, f"{max(0, min(100, int(evaluation[score_key])))}/100")
     st.write(evaluation.get("feedback", ""))
-    st.markdown(f"**{text['transcript']}:** {evaluation.get('transcript', '')}")
-    st.markdown(f"**{text['correction']}:** {evaluation.get('corrected_answer', '')}")
+    if evaluation.get("transcript"):
+        st.markdown(f"**{text['transcript']}:** {evaluation['transcript']}")
+    if evaluation.get("corrected_answer"):
+        st.markdown(f"**{text['correction']}:** {evaluation['corrected_answer']}")
 
     for correction in evaluation.get("corrections", []):
         st.write(
@@ -138,10 +161,9 @@ def render_evaluation(
     if corrected_audio:
         st.audio(corrected_audio)
 
-    if show_practice_plan:
-        level = "Advanced" if score >= 80 else "Intermediate" if score >= 55 else "Beginner"
+    if show_practice_plan and st.session_state.get("practice_page_plan"):
         st.markdown(f"**{text['next']}**")
-        st.write(ai_utils.generate_practice_plan(level, language, score))
+        st.write(st.session_state.practice_page_plan)
 
 
 st.set_page_config(page_title="Conversation Practice", page_icon=":material/forum:")
@@ -163,6 +185,8 @@ if "practice_page_question" not in st.session_state:
     st.session_state.practice_page_question = None
 if "practice_page_evaluation" not in st.session_state:
     st.session_state.practice_page_evaluation = None
+if "practice_page_plan" not in st.session_state:
+    st.session_state.practice_page_plan = None
 if "scene_challenge_questions" not in st.session_state:
     st.session_state.scene_challenge_questions = []
 if "scene_challenge_index" not in st.session_state:
@@ -312,6 +336,7 @@ if st.button(text["ask"], type="primary"):
         settings = LANGUAGES[language]
         st.session_state.practice_page_question = ai_utils.generate_language_question(settings["code"], level, focus)
         st.session_state.practice_page_evaluation = None
+        st.session_state.practice_page_plan = None
 
 question = st.session_state.practice_page_question
 if question:
@@ -344,6 +369,34 @@ if question:
                     getattr(selected_audio, "type", "audio/wav"),
                     level,
                 )
+                st.session_state.practice_page_plan = None
+                evaluation = st.session_state.practice_page_evaluation
+                if not evaluation.get("error"):
+                    score = max(0, min(100, int(evaluation.get("score", 0))))
+                    score_level = "Advanced" if score >= 80 else "Intermediate" if score >= 55 else "Beginner"
+                    focus_areas = [
+                        f"{label}: {evaluation[score_key]}/100"
+                        for label, score_key in [
+                            (text["grammar"], "grammar_score"),
+                            (text["pronunciation"], "pronunciation_score"),
+                            (text["fluency"], "fluency_score"),
+                            (text["relevance"], "content_score"),
+                        ]
+                        if evaluation.get(score_key) is not None
+                    ]
+                    focus_areas.extend([
+                        evaluation.get("pronunciation", ""),
+                        *[
+                            correction.get("explanation", "")
+                            for correction in evaluation.get("corrections", [])
+                        ],
+                    ])
+                    st.session_state.practice_page_plan = ai_utils.generate_practice_plan(
+                        score_level,
+                        language,
+                        score,
+                        focus_areas,
+                    )
 
 if st.session_state.practice_page_evaluation:
     render_evaluation(st.session_state.practice_page_evaluation, language, text)

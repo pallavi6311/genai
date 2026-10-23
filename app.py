@@ -174,6 +174,8 @@ def main() -> None:
         st.session_state.japanese_question = None
     if "japanese_evaluation" not in st.session_state:
         st.session_state.japanese_evaluation = None
+    if "japanese_practice_plan" not in st.session_state:
+        st.session_state.japanese_practice_plan = None
     if "main_scene_challenge_questions" not in st.session_state:
         st.session_state.main_scene_challenge_questions = []
     if "main_scene_challenge_index" not in st.session_state:
@@ -494,7 +496,7 @@ def main() -> None:
 
     st.markdown("---")
     st.subheader(f"{language} conversation practice")
-    st.caption(f"The AI asks a {language} question. Answer naturally in {language}, then review your corrections, pronunciation, and word usage.")
+    st.caption(f"The AI asks a {language} question. Record your answer, then review your score, corrections, pronunciation, and practice schedule.")
     practice_level = st.selectbox("Practice level", ["Beginner", "Intermediate", "Advanced"], key="japanese_level")
     practice_focus = st.selectbox(
         "Conversation topic",
@@ -508,6 +510,7 @@ def main() -> None:
             st.session_state.japanese_question = ai_utils.generate_language_question(language_code, practice_level, practice_focus)
             st.session_state.japanese_language = language
             st.session_state.japanese_evaluation = None
+            st.session_state.japanese_practice_plan = None
 
     question_data = st.session_state.get("japanese_question")
     if question_data:
@@ -528,30 +531,78 @@ def main() -> None:
         if question_audio:
             st.audio(question_audio)
 
-        answer = st.text_area(
-            f"Your answer in {practice_language}",
-            placeholder="Type your answer here",
-            height=120,
-            key="japanese_answer",
+        recorded_answer = st.audio_input(
+            f"Record your answer in {practice_language}",
+            key="conversation_audio_answer_main",
+            help="Allow microphone access, or upload a recording below.",
+        )
+        uploaded_answer = st.file_uploader(
+            "Or upload a recorded answer",
+            type=["wav", "mp3", "m4a", "ogg", "webm"],
+            key="conversation_audio_upload_main",
         )
         if st.button(f"Evaluate my {practice_language} answer"):
-            if not answer.strip():
-                st.warning("Please enter an answer in Japanese before evaluating it.")
+            selected_audio = recorded_answer or uploaded_answer
+            if selected_audio is None:
+                st.warning("Please record or upload an answer before evaluating it.")
             else:
-                with st.spinner("Evaluating meaning, grammar, and naturalness..."):
+                with st.spinner("Listening and reviewing pronunciation, grammar, and meaning..."):
                     language_code = {"English": "en", "Hindi": "hi", "Tamil": "ta", "Japanese": "ja"}[practice_language]
-                    st.session_state.japanese_evaluation = ai_utils.evaluate_language_answer(
+                    st.session_state.japanese_evaluation = ai_utils.evaluate_audio_answer(
                         language_code,
                         question_data["question"],
-                        answer.strip(),
+                        selected_audio.getvalue(),
+                        getattr(selected_audio, "type", "audio/wav"),
                         practice_level,
                     )
+                    st.session_state.japanese_practice_plan = None
+                    if not st.session_state.japanese_evaluation.get("error"):
+                        score = max(0, min(100, int(st.session_state.japanese_evaluation.get("score", 0))))
+                        score_level = get_level_from_score(score)
+                        evaluation_data = st.session_state.japanese_evaluation
+                        focus_areas = [
+                            f"{label}: {evaluation_data[score_key]}/100"
+                            for label, score_key in [
+                                ("Grammar", "grammar_score"),
+                                ("Pronunciation", "pronunciation_score"),
+                                ("Fluency", "fluency_score"),
+                                ("Answer relevance", "content_score"),
+                            ]
+                            if evaluation_data.get(score_key) is not None
+                        ]
+                        focus_areas.extend([
+                            evaluation_data.get("pronunciation", ""),
+                            *[
+                                correction.get("explanation", "")
+                                for correction in evaluation_data.get("corrections", [])
+                            ],
+                        ])
+                        st.session_state.japanese_practice_plan = ai_utils.generate_practice_plan(
+                            score_level,
+                            practice_language,
+                            score,
+                            focus_areas,
+                        )
 
     evaluation = st.session_state.get("japanese_evaluation")
     if evaluation:
         score = max(0, min(100, int(evaluation.get("score", 0))))
-        st.success(f"Score: {score}/100 | Level: {evaluation.get('level', 'Beginner')}")
+        if evaluation.get("error"):
+            st.warning(f"Audio evaluation was not completed: {evaluation['error']}")
+        else:
+            score_level = get_level_from_score(score)
+            st.success(f"Speaking score: {score}/100 | Current level: {score_level}")
+            score_columns = st.columns(4)
+            for column, label, score_key in zip(
+                score_columns,
+                ["Grammar", "Pronunciation", "Fluency", "Answer relevance"],
+                ["grammar_score", "pronunciation_score", "fluency_score", "content_score"],
+            ):
+                if evaluation.get(score_key) is not None:
+                    column.metric(label, f"{max(0, min(100, int(evaluation[score_key])))}/100")
         st.write(evaluation.get("feedback", ""))
+        if evaluation.get("transcript"):
+            st.markdown(f"**What we heard:** {evaluation['transcript']}")
         st.markdown(f"**Corrected answer:** {evaluation.get('corrected_answer', '')}")
 
         corrections = evaluation.get("corrections", [])
@@ -585,9 +636,9 @@ def main() -> None:
             st.caption("Listen to the corrected answer")
             st.audio(corrected_audio)
 
-        practice_plan = ai_utils.generate_practice_plan("Advanced" if score >= 80 else "Intermediate" if score >= 55 else "Beginner", practice_language, score)
-        st.markdown("**Next practice recommendation**")
-        st.write(practice_plan)
+        if st.session_state.japanese_practice_plan:
+            st.markdown("**Your score-based 7-day improvement schedule**")
+            st.write(st.session_state.japanese_practice_plan)
 
     st.markdown("---")
     st.subheader("Adaptive topics for improvement")

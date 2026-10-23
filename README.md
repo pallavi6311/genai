@@ -37,6 +37,10 @@ multiple languages.
 - Spoken-answer evaluation in every supported language, including transcription,
   grammar and meaning mistakes, pronunciation advice, corrected speech, and
   usage recommendations.
+- Separate speaking scores for grammar, pronunciation, fluency, and answer
+  relevance, plus a current level based on the overall score.
+- A personalized 7-day speaking schedule based on the latest score and feedback,
+  with a built-in schedule available when Gemini is unavailable.
 - Gemini-generated practice topics based on the learner's actual score.
 - Built-in fallback text and offline `pyttsx3` speech when online services are
   unavailable.
@@ -129,10 +133,13 @@ excluded from the Git and Docker build contexts.
 4. Enable OCR or story-and-speech generation before analyzing if you need those
    optional, slower features.
 5. Open conversation practice and choose a level and topic.
-6. Ask the AI for a question, answer in the selected language, and submit your answer.
-7. Review the score, correction, recommended vocabulary, pronunciation, and
-  usage guidance.
-8. Optionally generate adaptive practice recommendations on the main page.
+6. Ask the AI for a question, record your answer with the microphone (or upload
+  an audio recording), and submit it.
+7. Review your overall score and current level, grammar and pronunciation
+  subscores, transcript, correction, vocabulary, and pronunciation guidance.
+8. Follow the personalized 7-day speaking schedule and record another answer
+  to track improvement.
+9. Optionally generate adaptive practice recommendations on the main page.
 
 The **SceneSpeak** challenge is available directly below the image questions on
 the main page after an image description has been generated. Choose a level,
