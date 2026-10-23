@@ -142,31 +142,46 @@ def translate_image_description(description: str, target_lang_code: str) -> str:
     return description
 
 
-def answer_question_from_context(caption: str, ocr_text: str, question: str) -> str:
-    model = _get_model() or _get_model("gemini-1.5-flash")
+def answer_question_from_context(
+    caption: str,
+    ocr_text: str,
+    question: str,
+    image_bytes: Optional[bytes] = None,
+    mime_type: str = "image/jpeg",
+) -> str:
+    if not question.strip():
+        raise ValueError("Enter a question about the image.")
+    if not image_bytes:
+        raise ValueError("Analyze an image before asking a question about it.")
+
+    model = (
+        _get_model("gemini-flash-latest")
+        or _get_model("gemini-3.1-flash-lite")
+        or _get_model("gemini-3.5-flash-lite")
+    )
     if model is None:
-        context = caption
-        if ocr_text:
-            context += f" OCR text: {ocr_text}"
-        return f"Based on the image, the main description is: {context}."
+        raise RuntimeError("Gemini is unavailable. Check your API key and try again.")
 
     prompt = (
-        "Answer the user's question using only the image description and OCR text. "
-        "If the answer is not available, say it honestly.\n\n"
+        "Answer the user's specific question about the attached image directly and concisely. "
+        "Inspect the image itself; use the description and OCR only as additional context. "
+        "If asked to identify a logo, name the recognizable brand or organization and distinguish "
+        "that from legal trademark ownership. Use general knowledge to identify a recognizable logo, "
+        "but do not claim a person or organization owns it unless the evidence supports that claim. "
+        "If the image does not provide enough evidence, say what can and cannot be determined instead "
+        "of repeating the image description. Do not invent details.\n\n"
         f"Image description: {caption}\n"
         f"OCR text: {ocr_text or 'No readable text detected.'}\n\n"
-        f"Question: {question}"
+        f"User's question: {question}"
     )
-
-    try:
-        response = model.generate_content(prompt)
-        result = getattr(response, "text", "")
-        if result and result.strip():
-            return result.strip()
-    except Exception:
-        pass
-
-    return f"From the image, I can say that the key context is: {caption}."
+    response = model.generate_content([
+        {"mime_type": mime_type or "image/jpeg", "data": image_bytes},
+        prompt,
+    ])
+    result = getattr(response, "text", "")
+    if not result or not result.strip():
+        raise RuntimeError("Gemini returned no answer. Please try asking the question again.")
+    return result.strip()
 
 
 def generate_image_questions(caption: str, ocr_text: str, language: str, level: str = "Beginner") -> list[dict]:

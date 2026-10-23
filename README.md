@@ -13,6 +13,9 @@ multiple languages.
   adaptive recommendations available on demand.
 - Image-context questions generated from the uploaded image, so learners can
   explain what is visible and what is happening in the scene.
+- Image Q&A sends the analyzed image itself, along with its description and
+  detected text, so answers address the specific question instead of repeating
+  the image caption.
 - SceneSpeak three-round challenge: learners observe visible details, explain
   an interpretation using visual clues, then imagine a possible continuation.
   Each round uses spoken-answer feedback and contributes to a session recap.

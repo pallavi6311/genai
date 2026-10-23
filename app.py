@@ -213,6 +213,10 @@ def main() -> None:
         st.session_state.history = []
         st.session_state["last_caption"] = ""
         st.session_state["last_ocr"] = ""
+        st.session_state["last_image_bytes"] = None
+        st.session_state["last_image_mime_type"] = ""
+        st.session_state["last_image_answer"] = None
+        st.session_state["last_image_question"] = ""
         st.session_state.main_scene_challenge_questions = []
         st.session_state.main_scene_challenge_results = []
         st.session_state.main_scene_challenge_evaluation = None
@@ -317,6 +321,12 @@ def main() -> None:
                     st.session_state["last_caption"] = caption
                     st.session_state["last_localized_caption"] = localized_caption
                     st.session_state["last_ocr"] = ocr_text
+                    st.session_state["last_image_bytes"] = image_bytes
+                    st.session_state["last_image_mime_type"] = (
+                        getattr(uploaded, "type", "") or "image/jpeg"
+                    )
+                    st.session_state["last_image_answer"] = None
+                    st.session_state["last_image_question"] = ""
 
     if st.session_state.get("last_caption"):
         st.markdown("---")
@@ -678,17 +688,44 @@ def main() -> None:
     st.markdown("---")
     st.subheader("Ask about the image")
     question = st.text_input("Type a question about the uploaded image", key="question_box")
-    if st.button("Ask Gemini") and question:
-        caption = st.session_state.get("last_caption") or "No image description yet."
-        ocr_text = st.session_state.get("last_ocr", "")
+    if st.button("Ask Gemini"):
+        if not question.strip():
+            st.warning("Type a question about the image first.")
+        elif not st.session_state.get("last_image_bytes"):
+            st.warning("Analyze an image before asking a question about it.")
+        else:
+            caption = st.session_state.get("last_caption", "")
+            ocr_text = st.session_state.get("last_ocr", "")
+            try:
+                st.session_state["last_image_answer"] = ai_utils.answer_question_from_context(
+                    caption,
+                    ocr_text,
+                    question.strip(),
+                    st.session_state["last_image_bytes"],
+                    st.session_state.get("last_image_mime_type", "image/jpeg"),
+                )
+                st.session_state["last_image_question"] = question.strip()
+            except Exception as exc:
+                st.session_state["last_image_answer"] = None
+                st.session_state["last_image_question"] = question.strip()
+                st.error(f"Could not answer the image question: {exc}")
+
+    if (
+        st.session_state.get("last_image_answer")
+        and st.session_state.get("last_image_question") == question.strip()
+    ):
+        st.write(st.session_state["last_image_answer"])
         try:
-            answer = ai_utils.answer_question_from_context(caption, ocr_text, question)
-            st.write(answer)
-            audio_answer = generate_audio_file(answer, language, accent, "answer_audio.mp3")
+            audio_answer = generate_audio_file(
+                st.session_state["last_image_answer"],
+                language,
+                accent,
+                "answer_audio.mp3",
+            )
             if audio_answer:
                 st.audio(audio_answer)
         except Exception as exc:
-            st.error(f"Gemini Q&A failed: {exc}")
+            st.warning(f"Could not generate spoken audio for the answer: {exc}")
 
 
 if __name__ == "__main__":
