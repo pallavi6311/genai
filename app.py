@@ -168,7 +168,7 @@ def build_quiz_from_caption(caption: str) -> list[dict]:
 
 
 def main() -> None:
-    st.set_page_config(page_title="Communication Coach with Gemini", page_icon="🗣️")
+    st.set_page_config(page_title="SceneSpeak Communication Coach", page_icon="🗣️")
     st.markdown(css_code, unsafe_allow_html=True)
 
     if "history" not in st.session_state:
@@ -177,6 +177,24 @@ def main() -> None:
         st.session_state.japanese_question = None
     if "japanese_evaluation" not in st.session_state:
         st.session_state.japanese_evaluation = None
+    if "main_scene_challenge_questions" not in st.session_state:
+        st.session_state.main_scene_challenge_questions = []
+    if "main_scene_challenge_index" not in st.session_state:
+        st.session_state.main_scene_challenge_index = 0
+    if "main_scene_challenge_results" not in st.session_state:
+        st.session_state.main_scene_challenge_results = []
+    if "main_scene_challenge_evaluation" not in st.session_state:
+        st.session_state.main_scene_challenge_evaluation = None
+    if "main_scene_challenge_caption" not in st.session_state:
+        st.session_state.main_scene_challenge_caption = ""
+    if "main_scene_challenge_ocr" not in st.session_state:
+        st.session_state.main_scene_challenge_ocr = ""
+    if "main_scene_challenge_language" not in st.session_state:
+        st.session_state.main_scene_challenge_language = ""
+    if "main_scene_challenge_level" not in st.session_state:
+        st.session_state.main_scene_challenge_level = ""
+    if "main_scene_challenge_id" not in st.session_state:
+        st.session_state.main_scene_challenge_id = 0
 
     st.sidebar.title("Communication Coach")
     language = st.sidebar.selectbox("Language", ["English", "Hindi", "Tamil", "Japanese"], key="sidebar_language")
@@ -194,9 +212,15 @@ def main() -> None:
 
     if st.sidebar.button("Clear History"):
         st.session_state.history = []
+        st.session_state["last_caption"] = ""
+        st.session_state["last_ocr"] = ""
+        st.session_state.main_scene_challenge_questions = []
+        st.session_state.main_scene_challenge_results = []
+        st.session_state.main_scene_challenge_evaluation = None
+        st.session_state.main_scene_challenge_index = 0
 
-    st.title("AI Image-to-Speech Communication Coach")
-    st.caption("Upload an image, get a clear description, listen to the speech in the selected accent, and improve communication with adaptive practice topics.")
+    st.title("SceneSpeak: AI Image-to-Speech Communication Coach")
+    st.caption("Turn one image into a multilingual speaking lesson: understand the scene, listen, answer, and improve.")
 
     if not _gemini_ready():
         st.warning("Gemini API key not detected. Add GEMINI_API_KEY or GOOGLE_API_KEY to continue with full AI features. The app still works with the built-in fallback description and speech output.")
@@ -292,6 +316,165 @@ def main() -> None:
         for index, image_question in enumerate(st.session_state.get("image_context_questions", []), start=1):
             st.write(f"{index}. {image_question['question']}")
             st.caption(f"English meaning: {image_question['translation']}")
+
+        st.markdown("---")
+        st.subheader("SceneSpeak: three-round image challenge")
+        st.caption(
+            "Turn this image into a speaking challenge: observe visible details, explain your idea "
+            "using clues, then imagine what could happen next."
+        )
+        scene_level = st.selectbox(
+            "Challenge level",
+            ["Beginner", "Intermediate", "Advanced"],
+            key="main_scene_challenge_level_selector",
+        )
+        if st.button("Start / restart SceneSpeak challenge", key="start_main_scene_challenge"):
+            scene_language_code = {"English": "en", "Hindi": "hi", "Tamil": "ta", "Japanese": "ja"}[language]
+            with st.spinner("Creating three image-based speaking rounds..."):
+                st.session_state.main_scene_challenge_questions = ai_utils.generate_scene_challenge_questions(
+                    st.session_state["last_caption"],
+                    st.session_state.get("last_ocr", ""),
+                    scene_language_code,
+                    scene_level,
+                )
+            st.session_state.main_scene_challenge_caption = st.session_state["last_caption"]
+            st.session_state.main_scene_challenge_ocr = st.session_state.get("last_ocr", "")
+            st.session_state.main_scene_challenge_language = language
+            st.session_state.main_scene_challenge_level = scene_level
+            st.session_state.main_scene_challenge_index = 0
+            st.session_state.main_scene_challenge_results = []
+            st.session_state.main_scene_challenge_evaluation = None
+            st.session_state.main_scene_challenge_id += 1
+
+        challenge_is_stale = bool(
+            st.session_state.main_scene_challenge_questions
+            and (
+                st.session_state.main_scene_challenge_caption != st.session_state["last_caption"]
+                or st.session_state.main_scene_challenge_ocr != st.session_state.get("last_ocr", "")
+                or st.session_state.main_scene_challenge_language != language
+                or st.session_state.main_scene_challenge_level != scene_level
+            )
+        )
+        if challenge_is_stale:
+            st.info("The image, language, or level changed. Start a new challenge to refresh its questions.")
+
+        if st.session_state.main_scene_challenge_questions and not challenge_is_stale:
+            rounds = st.session_state.main_scene_challenge_questions
+            round_index = st.session_state.main_scene_challenge_index
+            if round_index < len(rounds):
+                challenge_round = rounds[round_index]
+                challenge_id = st.session_state.main_scene_challenge_id
+                st.progress(round_index / len(rounds))
+                st.caption(f"Round {round_index + 1} of {len(rounds)} · {challenge_round['stage']}")
+                st.info(f"{challenge_round['question']}\n\nEnglish meaning: {challenge_round['translation']}")
+                st.caption(f"Speaking goal: {challenge_round['goal']}")
+
+                question_audio_key = f"main_scene_question_audio_{challenge_id}_{round_index}"
+                if question_audio_key not in st.session_state:
+                    st.session_state[question_audio_key] = generate_audio_file(
+                        challenge_round["question"],
+                        language,
+                        accent,
+                        f"scene_challenge_{challenge_id}_{round_index}.mp3",
+                    )
+                if st.session_state[question_audio_key]:
+                    st.audio(st.session_state[question_audio_key])
+
+                recorded_answer = st.audio_input(
+                    "Record your answer",
+                    key=f"main_scene_audio_{challenge_id}_{round_index}",
+                    help="Allow microphone access, or upload a recording below.",
+                )
+                uploaded_answer = st.file_uploader(
+                    "Or upload a recorded answer",
+                    type=["wav", "mp3", "m4a", "ogg", "webm"],
+                    key=f"main_scene_upload_{challenge_id}_{round_index}",
+                )
+
+                current_evaluation = st.session_state.main_scene_challenge_evaluation
+                if not current_evaluation or current_evaluation.get("error"):
+                    if st.button("Evaluate this round", key=f"evaluate_main_scene_{challenge_id}_{round_index}"):
+                        selected_audio = recorded_answer or uploaded_answer
+                        if selected_audio is None:
+                            st.warning("Record or upload an answer before evaluation.")
+                        else:
+                            with st.spinner("Listening and reviewing your answer..."):
+                                scene_language_code = {
+                                    "English": "en",
+                                    "Hindi": "hi",
+                                    "Tamil": "ta",
+                                    "Japanese": "ja",
+                                }[language]
+                                current_evaluation = ai_utils.evaluate_audio_answer(
+                                    scene_language_code,
+                                    challenge_round["question"],
+                                    selected_audio.getvalue(),
+                                    getattr(selected_audio, "type", "audio/wav"),
+                                    scene_level,
+                                )
+                                st.session_state.main_scene_challenge_evaluation = current_evaluation
+                                if not current_evaluation.get("error"):
+                                    st.session_state.main_scene_challenge_results.append({
+                                        "stage": challenge_round["stage"],
+                                        "score": max(0, min(100, int(current_evaluation.get("score", 0)))),
+                                        "transcript": current_evaluation.get("transcript", ""),
+                                    })
+
+                current_evaluation = st.session_state.main_scene_challenge_evaluation
+                if current_evaluation:
+                    score = max(0, min(100, int(current_evaluation.get("score", 0))))
+                    if current_evaluation.get("error"):
+                        st.warning(f"Audio evaluation was not completed: {current_evaluation['error']}")
+                    else:
+                        st.success(f"{score}/100 | {current_evaluation.get('level', 'Beginner')}")
+                    st.write(current_evaluation.get("feedback", ""))
+                    if current_evaluation.get("transcript"):
+                        st.markdown(f"**What we heard:** {current_evaluation['transcript']}")
+                    if current_evaluation.get("corrected_answer"):
+                        st.markdown(f"**Suggested answer:** {current_evaluation['corrected_answer']}")
+                    if current_evaluation.get("corrections"):
+                        st.markdown("**Corrections**")
+                        for correction in current_evaluation["corrections"]:
+                            st.write(
+                                f"{correction.get('original', '')} → {correction.get('correction', '')}: "
+                                f"{correction.get('explanation', '')}"
+                            )
+                    if current_evaluation.get("vocabulary"):
+                        st.markdown("**Recommended vocabulary**")
+                        for word in current_evaluation["vocabulary"]:
+                            st.write(
+                                f"**{word.get('word', '')}** ({word.get('reading', '')}) — "
+                                f"{word.get('meaning', '')}"
+                            )
+                    if current_evaluation.get("pronunciation"):
+                        st.markdown(f"**Pronunciation practice:** {current_evaluation['pronunciation']}")
+                    if current_evaluation.get("usage"):
+                        st.markdown(f"**When to use it:** {current_evaluation['usage']}")
+
+                    if not current_evaluation.get("error"):
+                        next_label = "Continue to next round" if round_index + 1 < len(rounds) else "Finish challenge"
+                        if st.button(next_label, key=f"continue_main_scene_{challenge_id}_{round_index}"):
+                            st.session_state.main_scene_challenge_index += 1
+                            st.session_state.main_scene_challenge_evaluation = None
+                            st.rerun()
+            else:
+                results = st.session_state.main_scene_challenge_results
+                if results:
+                    average_score = round(sum(result["score"] for result in results) / len(results))
+                    weakest_round = min(results, key=lambda result: result["score"])
+                    st.progress(1.0)
+                    st.success(f"Challenge complete · Average score: {average_score}/100")
+                    st.markdown("**Round-by-round recap**")
+                    for result in results:
+                        st.write(f"**{result['stage']} · {result['score']}/100**")
+                        if result["transcript"]:
+                            st.caption(f"What we heard: {result['transcript']}")
+                    st.info(
+                        f"Suggested next focus: practise **{weakest_round['stage'].lower()}** "
+                        f"responses and build on your {weakest_round['score']}/100 result."
+                    )
+                else:
+                    st.warning("No round was successfully evaluated. Restart the challenge and try again.")
 
     st.markdown("---")
     st.subheader(f"{language} conversation practice")

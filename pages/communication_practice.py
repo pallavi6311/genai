@@ -101,7 +101,12 @@ def generate_audio(text: str, language: str, output_name: str):
         return None
 
 
-def render_evaluation(evaluation: dict, language: str, text: dict) -> None:
+def render_evaluation(
+    evaluation: dict,
+    language: str,
+    text: dict,
+    show_practice_plan: bool = True,
+) -> None:
     score = max(0, min(100, int(evaluation.get("score", 0))))
     if evaluation.get("error"):
         st.warning(f"Audio evaluation was not completed: {evaluation['error']}")
@@ -133,9 +138,10 @@ def render_evaluation(evaluation: dict, language: str, text: dict) -> None:
     if corrected_audio:
         st.audio(corrected_audio)
 
-    level = "Advanced" if score >= 80 else "Intermediate" if score >= 55 else "Beginner"
-    st.markdown(f"**{text['next']}**")
-    st.write(ai_utils.generate_practice_plan(level, language, score))
+    if show_practice_plan:
+        level = "Advanced" if score >= 80 else "Intermediate" if score >= 55 else "Beginner"
+        st.markdown(f"**{text['next']}**")
+        st.write(ai_utils.generate_practice_plan(level, language, score))
 
 
 st.set_page_config(page_title="Conversation Practice", page_icon=":material/forum:")
@@ -157,61 +163,149 @@ if "practice_page_question" not in st.session_state:
     st.session_state.practice_page_question = None
 if "practice_page_evaluation" not in st.session_state:
     st.session_state.practice_page_evaluation = None
-if "image_questions" not in st.session_state:
-    st.session_state.image_questions = []
-if "image_question_index" not in st.session_state:
-    st.session_state.image_question_index = 0
+if "scene_challenge_questions" not in st.session_state:
+    st.session_state.scene_challenge_questions = []
+if "scene_challenge_index" not in st.session_state:
+    st.session_state.scene_challenge_index = 0
+if "scene_challenge_results" not in st.session_state:
+    st.session_state.scene_challenge_results = []
+if "scene_challenge_evaluation" not in st.session_state:
+    st.session_state.scene_challenge_evaluation = None
+if "scene_challenge_caption" not in st.session_state:
+    st.session_state.scene_challenge_caption = ""
+if "scene_challenge_id" not in st.session_state:
+    st.session_state.scene_challenge_id = 0
+if "scene_challenge_language" not in st.session_state:
+    st.session_state.scene_challenge_language = ""
+if "scene_challenge_level" not in st.session_state:
+    st.session_state.scene_challenge_level = ""
 
-if st.session_state.get("last_caption"):
-    st.subheader("Image context speaking practice")
-    st.caption("Answer questions about your uploaded image. The AI checks whether your spoken answer matches the visible context.")
-    if st.button("Ask questions about my image"):
-        with st.spinner("Creating questions from the image..."):
+active_caption = st.session_state.get("last_caption", "")
+if active_caption:
+    st.subheader("SceneSpeak: three-round image challenge")
+    st.caption(
+        "Use one image in three ways: observe visible details, explain your interpretation "
+        "with clues, then imagine what could happen next."
+    )
+    if st.button("Start / restart SceneSpeak challenge", key="start_scene_challenge"):
+        with st.spinner("Building your image-based speaking challenge..."):
             settings = LANGUAGES[language]
-            st.session_state.image_questions = ai_utils.generate_image_questions(
-                st.session_state["last_caption"],
+            st.session_state.scene_challenge_questions = ai_utils.generate_scene_challenge_questions(
+                active_caption,
                 st.session_state.get("last_ocr", ""),
                 settings["code"],
                 level,
             )
-            st.session_state.image_question_index = 0
-            st.session_state.practice_page_evaluation = None
+        st.session_state.scene_challenge_caption = active_caption
+        st.session_state.scene_challenge_index = 0
+        st.session_state.scene_challenge_results = []
+        st.session_state.scene_challenge_evaluation = None
+        st.session_state.scene_challenge_id += 1
+        st.session_state.scene_challenge_language = language
+        st.session_state.scene_challenge_level = level
 
-    image_questions = st.session_state.image_questions
-    if image_questions:
-        image_question = image_questions[st.session_state.image_question_index % len(image_questions)]
-        st.info(f"{image_question['question']}\n\n{text['meaning']}: {image_question['translation']}")
-        image_question_audio = generate_audio(image_question["question"], language, "image_question.mp3")
-        if image_question_audio:
-            st.audio(image_question_audio)
-        image_audio_answer = st.audio_input(
-            text["answer"],
-            key="image_audio_answer",
-            help="Allow microphone access, or use the audio-file upload below if recording is unavailable.",
+    if (
+        st.session_state.scene_challenge_questions
+        and (
+            st.session_state.scene_challenge_caption != active_caption
+            or st.session_state.scene_challenge_language != language
+            or st.session_state.scene_challenge_level != level
         )
-        image_audio_upload = st.file_uploader(
-            "Or upload a recorded answer",
-            type=["wav", "mp3", "m4a", "ogg", "webm"],
-            key="image_audio_upload",
-        )
-        if st.button(text["evaluate"], key="evaluate_image_answer"):
-            selected_audio = image_audio_answer or image_audio_upload
-            if selected_audio is None:
-                st.warning(text["empty"])
+    ):
+        st.info("The image, language, or level changed. Start a new challenge to refresh its questions.")
+
+    if (
+        st.session_state.scene_challenge_questions
+        and st.session_state.scene_challenge_caption == active_caption
+        and st.session_state.scene_challenge_language == language
+        and st.session_state.scene_challenge_level == level
+    ):
+        questions = st.session_state.scene_challenge_questions
+        round_index = st.session_state.scene_challenge_index
+        if round_index < len(questions):
+            question = questions[round_index]
+            challenge_id = st.session_state.scene_challenge_id
+            st.progress(round_index / len(questions))
+            st.caption(f"Round {round_index + 1} of {len(questions)} · {question['stage']}")
+            st.info(f"{question['question']}\n\n{text['meaning']}: {question['translation']}")
+            st.caption(f"Speaking goal: {question['goal']}")
+
+            audio_cache_key = f"scene_challenge_audio_path_{challenge_id}_{round_index}"
+            if audio_cache_key not in st.session_state:
+                st.session_state[audio_cache_key] = generate_audio(
+                    question["question"],
+                    language,
+                    f"scene_challenge_question_{challenge_id}_{round_index}.mp3",
+                )
+            question_audio = st.session_state[audio_cache_key]
+            if question_audio:
+                st.audio(question_audio)
+
+            recorded_answer = st.audio_input(
+                text["answer"],
+                key=f"scene_challenge_audio_{challenge_id}_{round_index}",
+                help="Allow microphone access, or upload a recording below.",
+            )
+            uploaded_answer = st.file_uploader(
+                "Or upload a recorded answer",
+                type=["wav", "mp3", "m4a", "ogg", "webm"],
+                key=f"scene_challenge_upload_{challenge_id}_{round_index}",
+            )
+            current_evaluation = st.session_state.scene_challenge_evaluation
+            if not current_evaluation or current_evaluation.get("error"):
+                if st.button(text["evaluate"], key=f"evaluate_scene_challenge_{challenge_id}_{round_index}"):
+                    selected_audio = recorded_answer or uploaded_answer
+                    if selected_audio is None:
+                        st.warning(text["empty"])
+                    else:
+                        with st.spinner("Listening and reviewing your answer..."):
+                            settings = LANGUAGES[language]
+                            current_evaluation = ai_utils.evaluate_audio_answer(
+                                settings["code"],
+                                question["question"],
+                                selected_audio.getvalue(),
+                                getattr(selected_audio, "type", "audio/wav"),
+                                level,
+                            )
+                            st.session_state.scene_challenge_evaluation = current_evaluation
+                            if not current_evaluation.get("error"):
+                                st.session_state.scene_challenge_results.append(
+                                    {
+                                        "stage": question["stage"],
+                                        "score": max(0, min(100, int(current_evaluation.get("score", 0)))),
+                                        "transcript": current_evaluation.get("transcript", ""),
+                                    }
+                                )
+
+            current_evaluation = st.session_state.scene_challenge_evaluation
+            if current_evaluation:
+                render_evaluation(current_evaluation, language, text, show_practice_plan=False)
+                if not current_evaluation.get("error"):
+                    if st.button(
+                        "Continue to next round" if round_index + 1 < len(questions) else "Finish challenge",
+                        key=f"continue_scene_challenge_{challenge_id}_{round_index}",
+                    ):
+                        st.session_state.scene_challenge_index += 1
+                        st.session_state.scene_challenge_evaluation = None
+                        st.rerun()
+        else:
+            results = st.session_state.scene_challenge_results
+            if results:
+                average_score = round(sum(result["score"] for result in results) / len(results))
+                weakest_round = min(results, key=lambda result: result["score"])
+                st.progress(1.0)
+                st.success(f"Challenge complete · Average score: {average_score}/100")
+                st.write("**Your round-by-round recap**")
+                for result in results:
+                    st.write(f"**{result['stage']} · {result['score']}/100**")
+                    if result["transcript"]:
+                        st.caption(f"{text['transcript']}: {result['transcript']}")
+                st.info(
+                    f"Next focus: revisit **{weakest_round['stage'].lower()}** practice "
+                    f"and aim to build on your {weakest_round['score']}/100 result."
+                )
             else:
-                with st.spinner("..."):
-                    settings = LANGUAGES[language]
-                    st.session_state.practice_page_evaluation = ai_utils.evaluate_audio_answer(
-                        settings["code"],
-                        image_question["question"],
-                        selected_audio.getvalue(),
-                        getattr(selected_audio, "type", "audio/wav"),
-                        level,
-                    )
-        if st.button("Next image question", key="next_image_question"):
-            st.session_state.image_question_index += 1
-            st.session_state.practice_page_evaluation = None
-            st.rerun()
+                st.warning("No round was successfully evaluated. Restart the challenge and try again.")
 
 if st.button(text["ask"], type="primary"):
     with st.spinner("..."):

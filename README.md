@@ -1,4 +1,4 @@
-# AI Image-to-Speech Communication Coach
+# SceneSpeak: AI Image-to-Speech Communication Coach
 
 A Streamlit application that helps people practice communication by turning
 uploaded images into accurate visual descriptions, translated narration, and
@@ -11,6 +11,9 @@ multiple languages.
   colors, positions, actions, setting, and readable text.
 - Image-context questions generated from the uploaded image, so learners can
   explain what is visible and what is happening in the scene.
+- SceneSpeak three-round challenge: learners observe visible details, explain
+  an interpretation using visual clues, then imagine a possible continuation.
+  Each round uses spoken-answer feedback and contributes to a session recap.
 - Grounded descriptions that avoid guessing names, identities, locations,
   brands, or intentions when the image does not provide enough evidence.
 - Narration and translation in English, Hindi, Tamil, and Japanese.
@@ -128,9 +131,13 @@ excluded from the Git and Docker build contexts.
   usage guidance.
 8. Review the adaptive practice topics for the resulting level.
 
-The microphone practice is available from the main sidebar under
-**Open conversation practice**. The page changes its labels and selected voice
-for English, Hindi, Tamil, or Japanese.
+The **SceneSpeak** challenge is available directly below the image questions on
+the main page after an image description has been generated. Choose a level,
+then practise in three stages: Observe, Explain, and Imagine. Record or upload
+an answer for each stage, then review the round scores and suggested focus.
+The **Open conversation practice** page in the sidebar remains available for
+standalone conversation and image-context speaking practice. Both pages support
+English, Hindi, Tamil, and Japanese.
 
 ## Fallback behavior
 

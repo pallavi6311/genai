@@ -311,6 +311,87 @@ def _parse_json_response(text: str) -> dict:
             return {}
 
 
+def generate_scene_challenge_questions(
+    caption: str,
+    ocr_text: str,
+    language: str,
+    level: str = "Beginner",
+) -> list[dict]:
+    language_name = _LANG_NAMES.get(language, language)
+    fallback_questions = {
+        "English": [
+            ("Observe", "What details can you see in this scene?", "What details can you see in this scene?", "Name visible people, objects, actions, or colors."),
+            ("Explain", "What do you think is happening, and which visible clues support your idea?", "What do you think is happening, and which visible clues support your idea?", "Explain your idea using evidence from the scene."),
+            ("Imagine", "If this scene continued, what might happen next? Give one reason.", "If this scene continued, what might happen next? Give one reason.", "Create a possibility and support it with a reason."),
+        ],
+        "Hindi": [
+            ("Observe", "इस दृश्य में आपको कौन-कौन सी बातें दिखाई दे रही हैं?", "What details can you see in this scene?", "दिखाई देने वाले लोगों, वस्तुओं, गतिविधियों या रंगों का नाम बताएं।"),
+            ("Explain", "आपके विचार से यहाँ क्या हो रहा है, और कौन-से दृश्य संकेत आपके विचार का समर्थन करते हैं?", "What do you think is happening, and which visible clues support your idea?", "दृश्य के संकेतों के आधार पर अपना विचार समझाएँ।"),
+            ("Imagine", "अगर यह दृश्य आगे बढ़े, तो आगे क्या हो सकता है? एक कारण भी बताइए।", "If this scene continued, what might happen next? Give one reason.", "एक संभावना सोचें और उसका कारण बताएं।"),
+        ],
+        "Tamil": [
+            ("Observe", "இந்தக் காட்சியில் நீங்கள் என்னென்ன விவரங்களைப் பார்க்கிறீர்கள்?", "What details can you see in this scene?", "காணப்படும் மனிதர்கள், பொருட்கள், செயல்கள் அல்லது நிறங்களைக் குறிப்பிடுங்கள்."),
+            ("Explain", "இங்கே என்ன நடக்கிறது என்று நினைக்கிறீர்கள்? உங்கள் கருத்துக்கு ஆதரவாக எந்தக் காட்சி விவரங்கள் உள்ளன?", "What do you think is happening, and which visible clues support your idea?", "காட்சியில் உள்ள ஆதாரங்களைக் கொண்டு உங்கள் கருத்தை விளக்குங்கள்."),
+            ("Imagine", "இந்தக் காட்சி தொடர்ந்தால் அடுத்து என்ன நடக்கலாம்? ஒரு காரணத்தையும் சொல்லுங்கள்.", "If this scene continued, what might happen next? Give one reason.", "ஒரு சாத்தியத்தை கற்பனை செய்து அதற்கான காரணத்தைக் கூறுங்கள்."),
+        ],
+        "Japanese": [
+            ("Observe", "この場面にはどのようなものが見えますか。", "What details can you see in this scene?", "見える人、物、行動、色を挙げてください。"),
+            ("Explain", "ここで何が起きていると思いますか。そう考えた手がかりも説明してください。", "What do you think is happening, and which visible clues support your idea?", "場面に見える手がかりを使って考えを説明してください。"),
+            ("Imagine", "この場面が続くとしたら、次に何が起きると思いますか。理由も一つ挙げてください。", "If this scene continued, what might happen next? Give one reason.", "可能性を考え、その理由を説明してください。"),
+        ],
+    }
+    fallback = [
+        {"stage": stage, "question": question, "translation": translation, "goal": goal}
+        for stage, question, translation, goal in fallback_questions.get(
+            language_name, fallback_questions["English"]
+        )
+    ]
+
+    models = [
+        _get_model("gemini-flash-latest"),
+        _get_model("gemini-3.1-flash-lite"),
+        _get_model("gemini-3.5-flash-lite"),
+    ]
+    models = [model for model in models if model is not None]
+    if not models:
+        return fallback
+
+    prompt = (
+        f"Create exactly three spoken language-learning questions in {language_name} for a {level} learner. "
+        "Return a JSON array with exactly these stages in this order: Observe, Explain, Imagine. "
+        "Each item must contain stage, question, translation, and goal. "
+        "Observe asks for directly visible details only. Explain asks the learner to interpret the scene "
+        "and support the interpretation with visible clues; do not present uncertain details as facts. "
+        "Imagine invites a clearly hypothetical continuation, and must not be graded as an image fact. "
+        "Write question and goal in the selected language, and translation in English. "
+        "Return only valid JSON.\n\n"
+        f"Image description: {caption}\n"
+        f"Readable text in image: {ocr_text or 'None detected.'}"
+    )
+    for model in models:
+        try:
+            response = model.generate_content(prompt)
+            text = (getattr(response, "text", "") or "").strip()
+            text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.IGNORECASE)
+            value = json.loads(text)
+            if not isinstance(value, list):
+                continue
+            questions_by_stage = {
+                item.get("stage"): item
+                for item in value
+                if isinstance(item, dict)
+                and item.get("stage") in {"Observe", "Explain", "Imagine"}
+                and item.get("question")
+                and item.get("translation")
+                and item.get("goal")
+            }
+            if all(stage in questions_by_stage for stage in ("Observe", "Explain", "Imagine")):
+                return [questions_by_stage[stage] for stage in ("Observe", "Explain", "Imagine")]
+        except Exception:
+            continue
+    return fallback
+
+
 def generate_language_question(language: str, level: str, focus: str) -> dict:
     language_name = _LANG_NAMES.get(language, language)
     fallback = {
@@ -419,6 +500,7 @@ def evaluate_audio_answer(
     ]
     models = [model for model in models if model is not None]
     if not models:
+        fallback["error"] = "model_unavailable"
         return fallback
 
     prompt = (
